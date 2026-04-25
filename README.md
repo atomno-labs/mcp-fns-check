@@ -6,8 +6,8 @@
 ![version](https://img.shields.io/badge/version-0.1.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![mcp](https://img.shields.io/badge/MCP-compatible-brightgreen)
-![tests](https://img.shields.io/badge/tests-247%20passed-brightgreen)
-![coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)
+![tests](https://img.shields.io/badge/tests-265%20passed-brightgreen)
+![coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)
 
 Готов к подключению в Claude Desktop, Cursor, Claude Code, Cline и любой другой клиент, совместимый с Model Context Protocol (MCP).
 
@@ -44,10 +44,14 @@ pipx install atomno-mcp-fns-check
 ### Проверка работы
 
 ```bash
+atomno-mcp-fns-check --version
+# → atomno-mcp-fns-check 0.1.1
+
 atomno-mcp-fns-check --help
+# → полный список флагов: --transport / --host / --port / --log-level
 ```
 
-Пакет запускается как stdio-MCP-сервер: агент общается с ним через stdin/stdout JSON-RPC. Напрямую из шелла вы его не «потыкаете» — подключите к MCP-клиенту.
+По умолчанию пакет запускается как stdio-MCP-сервер: агент общается с ним через stdin/stdout JSON-RPC. Напрямую из шелла вы его не «потыкаете» — подключите к MCP-клиенту. Для сетевых сценариев доступен флаг `--transport {http,sse,streamable-http}` с `--host`/`--port`.
 
 ---
 

@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import atexit
 import importlib.resources as importlib_resources
@@ -330,16 +331,144 @@ def _cache_db_path() -> str:
     return os.environ.get("MCP_FNS_CACHE_DB", str(Path.cwd() / "atomno_mcp_fns_check_cache.sqlite"))
 
 
-def main() -> None:
-    """Точка входа CLI: запускает FastMCP по stdio-транспорту."""
-    log_level = os.environ.get("MCP_FNS_LOG_LEVEL", "INFO").upper()
+# Список транспортов FastMCP, которые мы допускаем в публичном CLI. Он
+# совпадает с `fastmcp.server.server.Transport`-literal; хардкодим здесь,
+# чтобы не зависеть от внутренних символов fastmcp (стабильный публичный
+# контракт остаётся за `FastMCP.run(transport=...)`).
+_SUPPORTED_TRANSPORTS = ("stdio", "http", "sse", "streamable-http")
+_DEFAULT_TRANSPORT = "stdio"
+_DEFAULT_HTTP_HOST = "127.0.0.1"
+_DEFAULT_HTTP_PORT = 8000
+_VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="atomno-mcp-fns-check",
+        description=(
+            "MCP-сервер для проверки российских контрагентов через открытые данные ФНС "
+            "(ЕГРЮЛ/ЕГРИП, ЕФРСБ, Прозрачный бизнес, ФССП, КАД). "
+            "7 тулзов: check_contractor (главный агрегатор) + 6 granular. "
+            "По умолчанию запускается по MCP stdio-транспорту для интеграции с Cursor, "
+            "Claude Desktop, Claude Code и другими MCP-клиентами."
+        ),
+        epilog=(
+            "Примеры:\n"
+            "  atomno-mcp-fns-check                      # запуск для MCP-клиента через stdio\n"
+            "  atomno-mcp-fns-check --transport http --port 8000\n"
+            "  atomno-mcp-fns-check --log-level DEBUG\n"
+            "\n"
+            "Переменные окружения:\n"
+            "  MCP_FNS_CACHE_DB   — путь к SQLite-файлу кэша ответов ЕГРЮЛ (TTL 168h).\n"
+            "  MCP_FNS_LOG_LEVEL  — уровень логирования (перекрывается флагом --log-level).\n"
+            "\n"
+            "Документация: https://github.com/atomno-labs/mcp-fns-check"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"atomno-mcp-fns-check {__version__}",
+        help="показать версию пакета и выйти",
+    )
+    parser.add_argument(
+        "--transport",
+        "-t",
+        choices=_SUPPORTED_TRANSPORTS,
+        default=_DEFAULT_TRANSPORT,
+        help=(
+            f"MCP-транспорт (по умолчанию: {_DEFAULT_TRANSPORT}). "
+            "stdio — для локальных MCP-клиентов; http/sse/streamable-http — для сетевых."
+        ),
+    )
+    parser.add_argument(
+        "--host",
+        default=_DEFAULT_HTTP_HOST,
+        help=(
+            f"Хост для http/sse/streamable-http транспортов (по умолчанию: {_DEFAULT_HTTP_HOST}). "
+            "Игнорируется для stdio."
+        ),
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=_DEFAULT_HTTP_PORT,
+        help=(
+            f"Порт для http/sse/streamable-http транспортов (по умолчанию: {_DEFAULT_HTTP_PORT}). "
+            "Игнорируется для stdio."
+        ),
+    )
+    parser.add_argument(
+        "--log-level",
+        "-l",
+        choices=_VALID_LOG_LEVELS,
+        default=None,
+        help=(
+            "Уровень логирования; перекрывает переменную MCP_FNS_LOG_LEVEL. "
+            "По умолчанию INFO."
+        ),
+    )
+    return parser
+
+
+def _resolve_log_level(cli_value: str | None) -> str:
+    """CLI-флаг имеет приоритет над env; фолбэк — INFO.
+
+    Возвращает строку (одну из _VALID_LOG_LEVELS). Никаких silent-fallback
+    на невалидные значения — argparse уже валидирует CLI, env-значение
+    нормализуется и матчится строго.
+    """
+    if cli_value is not None:
+        return cli_value
+    env_raw = os.environ.get("MCP_FNS_LOG_LEVEL")
+    if env_raw is None:
+        return "INFO"
+    env_norm = env_raw.strip().upper()
+    if env_norm in _VALID_LOG_LEVELS:
+        return env_norm
+    raise ValueError(
+        f"MCP_FNS_LOG_LEVEL={env_raw!r} — недопустимое значение. "
+        f"Допустимые: {', '.join(_VALID_LOG_LEVELS)}."
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Точка входа CLI.
+
+    Args:
+        argv: список аргументов (без имени программы). Если None — берётся
+            из sys.argv[1:]. Возвращает exit-code для программного
+            использования (0 — штатное завершение, 2 — ошибка конфигурации).
+    """
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        log_level = _resolve_log_level(args.log_level)
+    except ValueError as exc:
+        parser.error(str(exc))
+        return 2  # pragma: no cover - parser.error вызывает SystemExit(2)
+
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    logger.info("atomno-mcp-fns-check %s starting (cache=%s)", __version__, _cache_db_path())
-    mcp.run()
+    logger.info(
+        "atomno-mcp-fns-check %s starting (transport=%s, cache=%s)",
+        __version__,
+        args.transport,
+        _cache_db_path(),
+    )
+
+    run_kwargs: dict[str, Any] = {"transport": args.transport}
+    if args.transport in {"http", "sse", "streamable-http"}:
+        run_kwargs["host"] = args.host
+        run_kwargs["port"] = args.port
+    mcp.run(**run_kwargs)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

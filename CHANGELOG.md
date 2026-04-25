@@ -6,6 +6,21 @@
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-04-25
+
+**Patch release**: CLI-UX fix. Публичный API тулзов MCP без изменений — обновление безопасно для всех уже работающих интеграций (Cursor, Claude Desktop, Claude Code, Cline).
+
+### Fixed
+
+- **`atomno-mcp-fns-check --help` и `--version` больше не запускают stdio-сервер**. В v0.1.0 CLI игнорировал аргументы и сразу стартовал FastMCP, из-за чего `--help` на PyPI «подвешивался» на неинициализированный stdin и пользователь не мог даже узнать версию установленного пакета. Регресс пойман R-7a аудитом, отложен до patch-релиза чтобы не задерживать v0.1.0 public launch. Теперь реализовано через `argparse` с явной обработкой `--help`/`--version` до `mcp.run()`.
+
+### Added
+
+- **CLI-флаг `--transport {stdio,http,sse,streamable-http}`** (по умолчанию `stdio`). Позволяет запускать MCP-сервер через сетевые транспорты без обёртки — полезно для hosted-сценариев и отладки. Для http-транспортов добавлены `--host` (default `127.0.0.1`) и `--port` (default `8000`).
+- **CLI-флаг `--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}`** с приоритетом над переменной `MCP_FNS_LOG_LEVEL` (она продолжает работать как env-фолбэк). Невалидное значение `MCP_FNS_LOG_LEVEL` теперь явно валит процесс с `exit-2` вместо silent-fallback на INFO — чтобы опечатки в `.env` не маскировались.
+- **Test-suite: 18 CLI-тестов** (`tests/test_cli.py`) покрывают `--help`, `--version`, `--transport` validation, `--log-level` CLI/env/fallback-logic. Всего `265 passed, 86% coverage` (было `247 passed, 85%`).
+- **`main(argv: list[str] | None = None) -> int`** — точка входа теперь принимает argv для программного вызова и возвращает exit-code (ранее `main() -> None`). Обратной совместимости в публичном API нет — это internal entry point, вызывается только через console-script `atomno-mcp-fns-check`.
+
 ## [0.1.0] — 2026-04-25
 
 **🚀 Опубликован на PyPI**: https://pypi.org/project/atomno-mcp-fns-check/0.1.0/
@@ -69,5 +84,6 @@
 
 ---
 
-[Unreleased]: https://github.com/atomno-labs/mcp-fns-check/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/atomno-labs/mcp-fns-check/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/atomno-labs/mcp-fns-check/releases/tag/v0.1.1
 [0.1.0]: https://github.com/atomno-labs/mcp-fns-check/releases/tag/v0.1.0
