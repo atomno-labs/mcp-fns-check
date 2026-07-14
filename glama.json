@@ -1,4 +1,8 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": ["atomnos"]
+  "maintainers": [
+    "atomnos"
+  ],
+  "name": "mcp-fns-check",
+  "description": "Russian tax authority (FNS) counterparty checks: status, debts, blocks. Due diligence MCP."
 }
